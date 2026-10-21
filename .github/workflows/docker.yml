@@ -14,9 +14,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Tag corto del commit
+      - name: Calcular nombre de imagen y tag
         id: meta
-        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tp-dds" >> "$GITHUB_OUTPUT"
+          echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Login a GHCR
         uses: docker/login-action@v3
@@ -31,5 +33,5 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/tp-dds:latest
-            ghcr.io/${{ github.repository_owner }}/tp-dds:${{ steps.meta.outputs.short }}
+            ${{ steps.meta.outputs.image }}:latest
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.short }}
