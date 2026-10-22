@@ -9,15 +9,16 @@ permissions:
   packages: write
 
 jobs:
-  build-and-push:
+  build-validate-publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Calcular nombre de imagen y tag
+      - name: Calcular nombres de imagen y tag
         id: meta
         run: |
-          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tp-dds" >> "$GITHUB_OUTPUT"
+          echo "ghcr=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tp-dds" >> "$GITHUB_OUTPUT"
+          echo "dockerhub=${{ vars.DOCKERHUB_USERNAME }}/tp-dds" >> "$GITHUB_OUTPUT"
           echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Login a GHCR
@@ -27,11 +28,46 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build y push
+      - name: Login a Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build de la imagen (una sola vez)
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
-          tags: |
-            ${{ steps.meta.outputs.image }}:latest
-            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.short }}
+          load: true
+          tags: tp-dds:ci
+
+      - name: Validar la imagen
+        run: |
+          docker run -d --name test -p 8080:80 tp-dds:ci
+          for i in $(seq 1 10); do
+            if curl -fs http://localhost:8080 | grep -q "Hola DevOps"; then
+              echo "Validacion OK"
+              docker rm -f test
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "La validacion fallo"
+          docker logs test
+          docker rm -f test
+          exit 1
+
+      - name: Publicar en GHCR y Docker Hub
+        env:
+          GHCR: ${{ steps.meta.outputs.ghcr }}
+          DH: ${{ steps.meta.outputs.dockerhub }}
+          SHORT: ${{ steps.meta.outputs.short }}
+        run: |
+          docker tag tp-dds:ci "$GHCR:latest"
+          docker tag tp-dds:ci "$GHCR:$SHORT"
+          docker tag tp-dds:ci "$DH:latest"
+          docker tag tp-dds:ci "$DH:$SHORT"
+          docker push "$GHCR:latest"
+          docker push "$GHCR:$SHORT"
+          docker push "$DH:latest"
+          docker push "$DH:$SHORT"
